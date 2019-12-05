@@ -27,13 +27,10 @@
 //                   [buffers 3 images per second]
 // Service_2 - 1 Hz, every 6th Sequencer loop, core # 6
 //                   [time-stamp middle sample image with cvPutText or header]
-// Service_3 - 1 Hz , every 6th Sequencer loop, core # 5 
+// Service_3 -  
 //                   [difference current and previous time stamped images]
-// Service_4 - 1 Hz, every 6th Sequencer loop core # 6
+// Service_4 - 
 //                   [save time stamped image with cvSaveImage or write()]
-// Service_5 - 1 Hz , every 6th Sequencer loop core # 5
-//                   [write difference factor to syslog]
-//
 // With the above, priorities by RM policy would be:
 //
 // Sequencer = RT_MAX	@ 60 Hz
@@ -68,6 +65,18 @@
 using namespace cv;
 using namespace std;
 
+typedef struct
+{
+    int threadIdx;
+    unsigned long long sequencePeriods;
+} threadParams_t;
+
+typedef struct queueItem
+{
+    IplImage* userInputItem;
+    struct queueItem *nextItem;
+} QUEUE_ITEM;
+
 #define HRES 640
 #define VRES 480
 
@@ -86,12 +95,12 @@ int abortS1=FALSE, abortS2=FALSE, abortS3=FALSE, abortS4=FALSE, abortS5=FALSE;
 sem_t semS1, semS2, semS3, semS4, semS5;
 struct timeval start_time_val;
 
-typedef struct
-{
-    int threadIdx;
-    unsigned long long sequencePeriods;
-} threadParams_t;
+QueueItem* ListPointer = NULL;
 
+/* Define Functions */
+void push(IplImage* data, QUEUE_ITEM **listPointer);
+IplImage* pop(QUEUE_ITEM **listPointer);
+int isEmpty(QUEUE_ITEM **listPointer);
 
 void *Sequencer(void *threadp);
 
@@ -373,7 +382,8 @@ void *Service_1(void *threadp)
     while(!abortS1)
     {
         sem_wait(&semS1);
-        frame[S1Cnt%2]=cvQueryFrame(capture);
+        frame[S1Cnt%3]=cvQueryFrame(capture);
+        
         S1Cnt++;
         if(!frame) break;
         gettimeofday(&current_time_val, (struct timezone *)0);
@@ -508,4 +518,61 @@ void print_scheduler(void)
    }
 }
 
+void push(IplImage* data, QUEUE_ITEM **listPointer)
+{
+    QUEUE_ITEM* insertionPointer;
+    insertionPointer = new QUEUE_ITEM;
+    insertionPointer->userInputItem = data;
+    if(*listPointer == NULL)
+    {
+        insertionPointer->nextItem = insertionPointer;
+        *listPointer = insertionPointer;
+    }
+    else if((*listPointer)->nextItem == (*listPointer))
+    {
+        insertionPointer->nextItem = *listPointer;
+        (*listPointer)->nextItem = insertionPointer;
+        *listPointer = (*listPointer)->nextItem;
+    }
+    else
+    {
+        insertionPointer->nextItem = (*listPointer)->nextItem;
+        (*listPointer)->nextItem = insertionPointer;
+        *listPointer = (*listPointer)->nextItem;
+    }
 
+}
+
+IplImage* pop(QUEUE_ITEM **listPointer)
+{
+    IplImage* toReturn = 0;
+    QUEUE_ITEM* deletionPointer;
+
+    deletionPointer = (*listPointer)->nextItem;
+    toReturn = deletionPointer->userInputItem;
+
+    if((*listPointer)->nextItem != (*listPointer))
+    {
+        (*listPointer)->nextItem = deletionPointer->nextItem;
+    }
+    else
+    {
+        *listPointer = NULL;
+    }
+
+    delete deletionPointer;
+
+    return toReturn;
+}
+
+int isEmpty(QUEUE_ITEM **listPointer)
+{
+    if(*listPointer == NULL)
+    {
+        return 1;
+    }
+    else
+    {
+        return 0;
+    }
+}
