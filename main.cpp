@@ -58,10 +58,18 @@
 
 #include <syslog.h>
 #include <sys/time.h>
+#include <sys/sysinfo.h>
 
 #include <errno.h>
 
 #include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+
+using namespace cv;
+using namespace std;
+
+#define HRES 640
+#define VRES 480
 
 #define USEC_PER_MSEC (1000)
 #define NANOSEC_PER_SEC (1000000000)
@@ -69,6 +77,9 @@
 #define FALSE (0)
 
 #define NUM_THREADS (6+1)
+
+CvCapture* capture = cvCreateCameraCapture(1);
+IplImage* frame[3];
 
 int abortTest=FALSE;
 int abortS1=FALSE, abortS2=FALSE, abortS3=FALSE, abortS4=FALSE, abortS5=FALSE;
@@ -93,7 +104,7 @@ double getTimeMsec(void);
 void print_scheduler(void);
 
 
-void main(void)
+int main(void)
 {
     struct timeval current_time_val;
     int i, rc, scope;
@@ -117,7 +128,7 @@ void main(void)
 
    CPU_ZERO(&allcpuset);
 
-   for(i=0; i < NUM_CPU_CORES; i++)
+   for(i=0; i < 8; i++)
        CPU_SET(i, &allcpuset);
 
    printf("Using CPUS=%d from total available.\n", CPU_COUNT(&allcpuset));
@@ -362,8 +373,9 @@ void *Service_1(void *threadp)
     while(!abortS1)
     {
         sem_wait(&semS1);
+        frame[S1Cnt%2]=cvQueryFrame(capture);
         S1Cnt++;
-
+        if(!frame) break;
         gettimeofday(&current_time_val, (struct timezone *)0);
         syslog(LOG_CRIT, "Frame Sampler release %llu @ sec=%d, msec=%d\n", S1Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
     }
